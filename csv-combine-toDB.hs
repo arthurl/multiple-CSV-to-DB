@@ -3,17 +3,19 @@
 --{-# OPTIONS_GHC -fno-warn-unused-imports #-}
 
 {-
-Requires modules: transformers HDBC HDBC-sqlite3 directory text
+Requires modules: transformers pipes HDBC HDBC-sqlite3 directory text
 -}
 
 import Control.Monad
+import Pipes
 import Data.List
-import Control.Monad.Trans.Class
 import qualified Control.Monad.Trans.Reader as R
 
 import qualified Data.Text.Lazy as T (Text, unpack, splitOn, split, null, singleton)
 import qualified Data.Text.Lazy.IO as T (readFile)
-import System.Directory (removeFile)
+import Data.Char (toLower)
+import System.FilePath ((</>))
+import System.Directory (removeFile, getDirectoryContents, doesDirectoryExist)
 import Control.Exception (catch, throwIO, bracket)
 import System.IO.Error (isDoesNotExistError)
 import qualified Database.HDBC.Sqlite3 as DBSL (Connection, connectSqlite3)
@@ -33,6 +35,23 @@ removeFileIfExists fileName = removeFile fileName `catch` (\e ->
         then pure ()
         else throwIO e
     )
+
+-- | A `Producer` that outputs filepaths of files ending in ".csv".
+getRecursiveCSV :: (MonadIO m)
+                => FilePath -> Producer FilePath m ()
+getRecursiveCSV path = do
+    -- isDirectory is checked before checking ".csv" suffix because a folder might end in ".csv"
+    isDirectory <- liftIO $ doesDirectoryExist path
+    if isDirectory
+        then do
+            names <- liftIO $ getDirectoryContents path
+                -- This filters out all files beginning with ".", including "./" and "../"
+            let properNames = filter ((/= '.') . head) names
+                properPath = map (path </>) properNames
+            for (each properPath) getRecursiveCSV
+        else if ".csv" `isSuffixOf` map toLower path
+            then yield path
+            else pure ()
 
 -- | Naive CSV decoding.
 decodeCSV :: T.Text -> [[T.Text]]
@@ -54,9 +73,14 @@ addColumnsIfNotExists colNameS = do
 
 -- | Add CSV record. Note pattern of UPDATE then INSERT. See
 --   https://stackoverflow.com/a/15277374
-addCsvRecordFromFile :: FilePath -- ^ Path of CSV file
+addCsvRecordFromFile :: Consumer FilePath (R.ReaderT DbTblConnection IO) ()
+addCsvRecordFromFile = forever $ do
+    fileName <- await
+    lift $ addCsvRecordFromFile' fileName
+
+addCsvRecordFromFile' :: FilePath -- ^ Path of CSV file
                      -> R.ReaderT DbTblConnection IO ()
-addCsvRecordFromFile fileName = do
+addCsvRecordFromFile' fileName = do
     DbTblConnection conn tableName <- R.ask
 
     headName:headUnits:csvData <- lift $ decodeCSV <$> T.readFile fileName
@@ -104,8 +128,9 @@ main = do
             " (date TEXT NOT NULL, time TEXT NOT NULL, PRIMARY KEY (date,time)) WITHOUT ROWID") []
         let dbTable = DbTblConnection conn tableName
 
-        R.runReaderT (addCsvRecordFromFile "data/2014 data/CHW Riser 1 _ 2/JAN.CSV") dbTable
-        R.runReaderT (addCsvRecordFromFile "data/2014 data/SYSTEM EFFICIENCY/JAN.CSV") dbTable
+        R.runReaderT (runEffect $
+            getRecursiveCSV "data/2015 data/CHW Riser 1 _ 2" >-> addCsvRecordFromFile
+            ) dbTable
 
         DB.commit conn
         )
