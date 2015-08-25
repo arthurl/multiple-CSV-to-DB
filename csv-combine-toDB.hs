@@ -20,10 +20,9 @@ import qualified Database.HDBC.Sqlite3 as DBSL (Connection, connectSqlite3)
 import qualified Database.HDBC as DB
 
 
-data DbTblConnection = DbTblConnection {
-    getConn :: DBSL.Connection -- ^ Database connection. The type is database specific!
-,   getTable :: String -- ^ Name of table in database.
-}
+data DbTblConnection = DbTblConnection
+    DBSL.Connection -- ^ Database connection. The type is database specific!
+    String -- ^ Name of table in database.
 
 -- | Removes file if exists. Error catching is used instead of explicitly
 --   testing for the existence of file to eliminate race conditions. See
