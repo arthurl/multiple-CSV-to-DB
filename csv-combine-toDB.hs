@@ -54,10 +54,19 @@ getRecursiveCSV path = do
             then yield path
             else pure ()
 
--- | Naive CSV decoding.
-decodeCSV :: T.Text -> [[T.Text]]
-decodeCSV = map (T.splitOn $ T.singleton ',') .
-                filter (not . T.null) . T.split (`elem` "\n\r")
+-- | Pipe that takes in a filepath for a CSV file and outputs parsed CSV data.
+--   Improvement: Use a more robust CSV parser.
+getCsvRecordFromFile :: (MonadIO m)
+                     => Pipe FilePath [[T.Text]] m ()
+getCsvRecordFromFile = forever $ do
+    fileName <- await
+    csvData <- liftIO $ decodeCSV <$> T.readFile fileName
+    yield csvData
+  where
+    -- | Naive CSV decoding.
+    decodeCSV :: T.Text -> [[T.Text]]
+    decodeCSV = map (T.splitOn $ T.singleton ',') .
+                    filter (not . T.null) . T.split (`elem` "\n\r")
 
 -- | Add columns to database. No error if the columns already exist.
 addColumnsIfNotExists :: (MonadReader DbTblConnection m, MonadIO m)
@@ -75,13 +84,12 @@ addColumnsIfNotExists colNameS = do
 
 -- | Add CSV record. Note pattern of UPDATE then INSERT. See
 --   https://stackoverflow.com/a/15277374
-addCsvRecordFromFile :: (MonadReader DbTblConnection m, MonadIO m)
-                     => Consumer FilePath m ()
-addCsvRecordFromFile = forever $ do
-    fileName <- await
+addCsvRecordToDB :: (MonadReader DbTblConnection m, MonadIO m)
+                 => Consumer [[T.Text]] m ()
+addCsvRecordToDB = forever $ do
+    headName:headUnits:csvData <- await
     DbTblConnection conn tableName <- ask
 
-    headName:headUnits:csvData <- liftIO $ decodeCSV <$> T.readFile fileName
         -- Put units together with header name.
     let h1 :: [String]
         h1 = zipWith (\name units -> T.unpack name ++ '(' : T.unpack units ++ ")")
@@ -126,7 +134,7 @@ main = do
         let dbTable = DbTblConnection conn tableName
 
         runReaderT (runEffect $
-            getRecursiveCSV "data/2015 data/CHW Riser 1 _ 2" >-> addCsvRecordFromFile
+            getRecursiveCSV "data/2015 data" >-> getCsvRecordFromFile >-> addCsvRecordToDB
             ) dbTable
 
         DB.commit conn
