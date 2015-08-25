@@ -42,7 +42,7 @@ addColumnsIfNotExists conn tableName colNameS = do
     -- Helper function that acts on each column name to be added.
     let addColumnIfNotExists newCol =
             when (newCol `notElem` curColS) $ void $
-                DB.run conn ("ALTER TABLE " ++ tableName ++ " ADD COLUMN " ++ newCol) []
+                DB.run conn ("ALTER TABLE " ++ tableName ++ " ADD COLUMN \"" ++ newCol ++ "\"") []
     mapM_ addColumnIfNotExists colNameS
 
 -- | Add CSV record. Note pattern of UPDATE then INSERT. See
@@ -54,8 +54,8 @@ addCsvRecordFromFile :: (DB.IConnection c)
     -> IO ()
 addCsvRecordFromFile conn tableName fileName = do
     headName:headUnits:csvData <- decodeCSV <$> readFile fileName
-        -- Put units together with header name. Note that the result is escaped with quotes.
-    let h1 = zipWith (\name units -> '\"' : name ++ '(' : units ++ ")\"") headName headUnits
+        -- Put units together with header name.
+    let h1 = zipWith (\name units -> name ++ '(' : units ++ ")") headName headUnits
         header :: [String]
         header = "date":"time": drop 2 h1
 
@@ -63,12 +63,12 @@ addCsvRecordFromFile conn tableName fileName = do
 
     -- Build UPDATE statement
     let varString :: String
-        varString = intercalate "=?, " (drop 2 header) ++ "=?"
+        varString = '\"' : (intercalate "\"=?, \"" (drop 2 header)) ++ "\"=?"
     updStmt <- DB.prepare conn ("UPDATE " ++ tableName ++ " SET " ++ varString ++ " WHERE date=? AND time=?")
 
     -- Build INSERT OR IGNORE statement
     let headerString :: String
-        headerString = '(' : intercalate "," header ++ ")"
+        headerString = "(\"" ++ intercalate "\",\"" header ++ "\")"
         questionMarkString :: String -- ^ String of '?' separated by ','
         questionMarkString = '(' : intercalate "," (replicate (length header) "?") ++ ")"
     insStmt <- DB.prepare conn ("INSERT OR IGNORE INTO " ++ tableName ++ headerString ++ " VALUES " ++ questionMarkString)
