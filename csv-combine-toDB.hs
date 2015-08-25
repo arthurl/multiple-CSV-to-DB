@@ -20,8 +20,8 @@ import qualified Database.HDBC as DB
 -- | Removes file if exists. Error catching is used instead of explicitly
 --   testing for the existence of file to eliminate race conditions. See
 --   https://stackoverflow.com/a/8502391
-removeIfExists :: FilePath -> IO ()
-removeIfExists fileName = removeFile fileName `catch` (\e ->
+removeFileIfExists :: FilePath -> IO ()
+removeFileIfExists fileName = removeFile fileName `catch` (\e ->
     if isDoesNotExistError e
         then pure ()
         else throwIO e
@@ -85,7 +85,7 @@ main = do
     let dbName = "output.db"
         tableName = "data"
 
-    removeIfExists dbName
+    removeFileIfExists dbName
 
     -- Connect / create database. This is SQLite specific!
     -- `bracket` will disconnect database in event of any error.
