@@ -3,13 +3,14 @@
 --{-# OPTIONS_GHC -fno-warn-unused-imports #-}
 
 {-
-Requires modules: HDBC HDBC-sqlite3 directory split
+Requires modules: HDBC HDBC-sqlite3 directory text
 -}
 
 import Control.Monad
 import Data.List
 
-import qualified Data.List.Split as L.Split (splitOn, wordsBy)
+import qualified Data.Text.Lazy as T (Text, unpack, splitOn, split, null, singleton)
+import qualified Data.Text.Lazy.IO as T (readFile)
 import System.Directory (removeFile)
 import Control.Exception (catch, throwIO, bracket)
 import System.IO.Error (isDoesNotExistError)
@@ -28,8 +29,9 @@ removeFileIfExists fileName = removeFile fileName `catch` (\e ->
     )
 
 -- | Naive CSV decoding.
-decodeCSV :: String -> [[String]]
-decodeCSV = map (L.Split.splitOn ",") . L.Split.wordsBy (`elem` "\n\r")
+decodeCSV :: T.Text -> [[T.Text]]
+decodeCSV = map (T.splitOn $ T.singleton ',') .
+                filter (not . T.null) . T.split (`elem` "\n\r")
 
 -- | Add columns to database. No error if the columns already exist.
 addColumnsIfNotExists :: (DB.IConnection c)
@@ -53,9 +55,11 @@ addCsvRecordFromFile :: (DB.IConnection c)
     -> FilePath -- ^ Path of CSV file
     -> IO ()
 addCsvRecordFromFile conn tableName fileName = do
-    headName:headUnits:csvData <- decodeCSV <$> readFile fileName
+    headName:headUnits:csvData <- decodeCSV <$> T.readFile fileName
         -- Put units together with header name.
-    let h1 = zipWith (\name units -> name ++ '(' : units ++ ")") headName headUnits
+    let h1 :: [String]
+        h1 = zipWith (\name units -> T.unpack name ++ '(' : T.unpack units ++ ")")
+                headName headUnits
         header :: [String]
         header = "date":"time": drop 2 h1
 
