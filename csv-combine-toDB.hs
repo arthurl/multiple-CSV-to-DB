@@ -1,15 +1,16 @@
 {-# OPTIONS_GHC -Wall                    #-}
 --{-# OPTIONS_GHC -fno-warn-unused-binds   #-}
 --{-# OPTIONS_GHC -fno-warn-unused-imports #-}
+{-# LANGUAGE FlexibleContexts            #-}
 
 {-
-Requires modules: transformers pipes HDBC HDBC-sqlite3 directory text
+Requires modules: mtl pipes HDBC HDBC-sqlite3 directory text
 -}
 
 import Control.Monad
+import Control.Monad.Reader
 import Pipes
 import Data.List
-import qualified Control.Monad.Trans.Reader as R
 
 import qualified Data.Text.Lazy as T (Text, unpack, splitOn, split, null, singleton)
 import qualified Data.Text.Lazy.IO as T (readFile)
@@ -59,31 +60,28 @@ decodeCSV = map (T.splitOn $ T.singleton ',') .
                 filter (not . T.null) . T.split (`elem` "\n\r")
 
 -- | Add columns to database. No error if the columns already exist.
-addColumnsIfNotExists :: [String] -- ^ List of column names to be added
-                      -> R.ReaderT DbTblConnection IO ()
+addColumnsIfNotExists :: (MonadReader DbTblConnection m, MonadIO m)
+                      => [String] -- ^ List of column names to be added
+                      -> m ()
 addColumnsIfNotExists colNameS = do
-    DbTblConnection conn tableName <- R.ask
-    lift $ do
-        curColS <- map fst <$> DB.describeTable conn tableName
-        -- Helper function that acts on each column name to be added.
-        let addColumnIfNotExists newCol =
-                when (newCol `notElem` curColS) $ void $
-                    DB.run conn ("ALTER TABLE " ++ tableName ++ " ADD COLUMN \"" ++ newCol ++ "\"") []
-        mapM_ addColumnIfNotExists colNameS
+    DbTblConnection conn tableName <- ask
+
+    curColS <- liftIO $ map fst <$> DB.describeTable conn tableName
+    -- Helper function that acts on each column name to be added.
+    let addColumnIfNotExists newCol =
+            when (newCol `notElem` curColS) $ void $
+                DB.run conn ("ALTER TABLE " ++ tableName ++ " ADD COLUMN \"" ++ newCol ++ "\"") []
+    liftIO $ mapM_ addColumnIfNotExists colNameS
 
 -- | Add CSV record. Note pattern of UPDATE then INSERT. See
 --   https://stackoverflow.com/a/15277374
-addCsvRecordFromFile :: Consumer FilePath (R.ReaderT DbTblConnection IO) ()
+addCsvRecordFromFile :: (MonadReader DbTblConnection m, MonadIO m)
+                     => Consumer FilePath m ()
 addCsvRecordFromFile = forever $ do
     fileName <- await
-    lift $ addCsvRecordFromFile' fileName
+    DbTblConnection conn tableName <- ask
 
-addCsvRecordFromFile' :: FilePath -- ^ Path of CSV file
-                     -> R.ReaderT DbTblConnection IO ()
-addCsvRecordFromFile' fileName = do
-    DbTblConnection conn tableName <- R.ask
-
-    headName:headUnits:csvData <- lift $ decodeCSV <$> T.readFile fileName
+    headName:headUnits:csvData <- liftIO $ decodeCSV <$> T.readFile fileName
         -- Put units together with header name.
     let h1 :: [String]
         h1 = zipWith (\name units -> T.unpack name ++ '(' : T.unpack units ++ ")")
@@ -93,24 +91,23 @@ addCsvRecordFromFile' fileName = do
 
     addColumnsIfNotExists header
 
-    lift $ do
-        -- Build UPDATE statement
-        let varString :: String
-            varString = '\"' : (intercalate "\"=?, \"" (drop 2 header)) ++ "\"=?"
-        updStmt <- DB.prepare conn ("UPDATE " ++ tableName ++ " SET " ++ varString ++ " WHERE date=? AND time=?")
+    -- Build UPDATE statement
+    let varString :: String
+        varString = '\"' : (intercalate "\"=?, \"" (drop 2 header)) ++ "\"=?"
+    updStmt <- liftIO $ DB.prepare conn ("UPDATE " ++ tableName ++ " SET " ++ varString ++ " WHERE date=? AND time=?")
 
-        -- Build INSERT OR IGNORE statement
-        let headerString :: String
-            headerString = "(\"" ++ intercalate "\",\"" header ++ "\")"
-            questionMarkString :: String -- ^ String of '?' separated by ','
-            questionMarkString = '(' : intercalate "," (replicate (length header) "?") ++ ")"
-        insStmt <- DB.prepare conn ("INSERT OR IGNORE INTO " ++ tableName ++ headerString ++ " VALUES " ++ questionMarkString)
+    -- Build INSERT OR IGNORE statement
+    let headerString :: String
+        headerString = "(\"" ++ intercalate "\",\"" header ++ "\")"
+        questionMarkString :: String -- ^ String of '?' separated by ','
+        questionMarkString = '(' : intercalate "," (replicate (length header) "?") ++ ")"
+    insStmt <- liftIO $ DB.prepare conn ("INSERT OR IGNORE INTO " ++ tableName ++ headerString ++ " VALUES " ++ questionMarkString)
 
-        forM_ csvData (\row -> do
-            let sqlAll@(sqlDate:sqlTime:sqlRest) = map DB.toSql row
-            _ <- DB.execute updStmt $ sqlRest ++ [sqlDate,sqlTime]
-            DB.execute insStmt sqlAll
-            )
+    liftIO $ forM_ csvData (\row -> do
+        let sqlAll@(sqlDate:sqlTime:sqlRest) = map DB.toSql row
+        _ <- DB.execute updStmt $ sqlRest ++ [sqlDate,sqlTime]
+        DB.execute insStmt sqlAll
+        )
 
 
 main :: IO ()
@@ -128,7 +125,7 @@ main = do
             " (date TEXT NOT NULL, time TEXT NOT NULL, PRIMARY KEY (date,time)) WITHOUT ROWID") []
         let dbTable = DbTblConnection conn tableName
 
-        R.runReaderT (runEffect $
+        runReaderT (runEffect $
             getRecursiveCSV "data/2015 data/CHW Riser 1 _ 2" >-> addCsvRecordFromFile
             ) dbTable
 
