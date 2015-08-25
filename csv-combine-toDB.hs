@@ -38,9 +38,9 @@ removeFileIfExists fileName = removeFile fileName `catch` (\e ->
     )
 
 -- | A `Producer` that outputs filepaths of files ending in ".csv".
-getRecursiveCSV :: (MonadIO m)
-                => FilePath -> Producer FilePath m ()
-getRecursiveCSV path = do
+getRecursiveCSVPath :: (MonadIO m)
+                    => FilePath -> Producer FilePath m ()
+getRecursiveCSVPath path = do
     -- isDirectory is checked before checking ".csv" suffix because a folder might end in ".csv"
     isDirectory <- liftIO $ doesDirectoryExist path
     if isDirectory
@@ -49,7 +49,7 @@ getRecursiveCSV path = do
                 -- This filters out all files beginning with ".", including "./" and "../"
             let properNames = filter ((/= '.') . head) names
                 properPath = map (path </>) properNames
-            for (each properPath) getRecursiveCSV
+            for (each properPath) getRecursiveCSVPath
         else if ".csv" `isSuffixOf` map toLower path
             then yield path
             else pure ()
@@ -134,7 +134,7 @@ main = do
         let dbTable = DbTblConnection conn tableName
 
         runReaderT (runEffect $
-            getRecursiveCSV "data/2015 data" >-> getCsvRecordFromFile >-> addCsvRecordToDB
+            getRecursiveCSVPath "data/2015 data" >-> getCsvRecordFromFile >-> addCsvRecordToDB
             ) dbTable
 
         DB.commit conn
