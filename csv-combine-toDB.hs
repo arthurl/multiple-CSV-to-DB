@@ -3,10 +3,6 @@
 --{-# OPTIONS_GHC -fno-warn-unused-imports #-}
 {-# LANGUAGE FlexibleContexts            #-}
 
-{-
-Requires modules: mtl pipes HDBC HDBC-sqlite3 directory text
--}
-
 import Control.Monad
 import Control.Monad.Reader
 import Pipes
