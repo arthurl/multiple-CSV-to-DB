@@ -89,6 +89,7 @@ addColumnsIfNotExists colNameS = do
 
 -- | A `consumer` that adds CSV records to database. Note pattern of `UPDATE`
 --   then `INSERT OR IGNORE`. See https://stackoverflow.com/a/15277374
+--   Note: Assumes that the first row = header, and second row = units.
 addCsvRecordToDB :: (MonadReader DbTblConnection m, MonadIO m)
                  => Consumer [[T.Text]] m ()
 addCsvRecordToDB = forever $ do
@@ -125,21 +126,22 @@ addCsvRecordToDB = forever $ do
 
 main :: IO ()
 main = do
-    let dbName = "output.db"
+    let dbFileName = "output.db"
         tableName = "data"
+        csvPath = "data/"
 
-    removeFileIfExists dbName
+    removeFileIfExists dbFileName
 
     -- Connect / create database. This is SQLite specific!
     -- `bracket` will disconnect database in event of any error.
-    bracket (DBSL.connectSqlite3 dbName) DB.disconnect (\conn -> do
+    bracket (DBSL.connectSqlite3 dbFileName) DB.disconnect (\conn -> do
         -- Create table. WITHOUT ROWID is also SQLite specific.
         _ <- DB.run conn ("CREATE TABLE " ++ tableName ++
             " (date TEXT NOT NULL, time TEXT NOT NULL, PRIMARY KEY (date,time)) WITHOUT ROWID") []
         let dbTable = DbTblConnection conn tableName
 
         runReaderT (runEffect $
-            getRecursiveCSVPath "data/2015 data" >-> getCsvRecordFromFile >-> addCsvRecordToDB
+            getRecursiveCSVPath csvPath >-> getCsvRecordFromFile >-> addCsvRecordToDB
             ) dbTable
 
         DB.commit conn
