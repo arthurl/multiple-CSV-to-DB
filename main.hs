@@ -15,12 +15,12 @@ import System.FilePath ((</>))
 import System.Directory (removeFile, getDirectoryContents, doesDirectoryExist)
 import Control.Exception (catch, throwIO, bracket)
 import System.IO.Error (isDoesNotExistError)
-import qualified Database.HDBC.Sqlite3 as DBSL (Connection, connectSqlite3)
-import qualified Database.HDBC as DB
+import qualified Database.HDBC.Sqlite3 as DB (Connection, connectSqlite3)
+import qualified Database.HDBC as DB (run, describeTable, prepare, execute, commit, disconnect, toSql)
 
 
 data DbTblConnection = DbTblConnection
-    DBSL.Connection -- ^ Database connection. The type is database specific!
+    DB.Connection -- ^ Database connection. The type is db specific; change import to modify db.
     String -- ^ Name of table in database.
 
 -- | Removes file if exists. Error catching is used instead of explicitly
@@ -134,7 +134,7 @@ main = do
 
     -- Connect / create database. This is SQLite specific!
     -- `bracket` will disconnect database in event of any error.
-    bracket (DBSL.connectSqlite3 dbFileName) DB.disconnect (\conn -> do
+    bracket (DB.connectSqlite3 dbFileName) DB.disconnect (\conn -> do
         -- Create table. WITHOUT ROWID is also SQLite specific.
         _ <- DB.run conn ("CREATE TABLE " ++ tableName ++
             " (date TEXT NOT NULL, time TEXT NOT NULL, PRIMARY KEY (date,time)) WITHOUT ROWID") []
