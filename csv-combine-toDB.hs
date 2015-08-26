@@ -37,7 +37,9 @@ removeFileIfExists fileName = removeFile fileName `catch` (\e ->
         else throwIO e
     )
 
--- | A `Producer` that outputs filepaths of files ending in ".csv".
+-- | A `Producer` that outputs filepaths of files ending in ".csv". If given a
+--   directory, it will traverse the directory depth-first looking for "*.csv"
+--   files.
 getRecursiveCSVPath :: (MonadIO m)
                     => FilePath -> Producer FilePath m ()
 getRecursiveCSVPath path = do
@@ -54,7 +56,9 @@ getRecursiveCSVPath path = do
             then yield path
             else pure ()
 
--- | Pipe that takes in a filepath for a CSV file and outputs parsed CSV data.
+-- | `Pipe` that takes in a filepath for a CSV file and outputs parsed CSV data.
+--   The list output is generated lazily; i.e. the input file is only read when
+--   elements of the list are used.
 --   Improvement: Use a more robust CSV parser.
 getCsvRecordFromFile :: (MonadIO m)
                      => Pipe FilePath [[T.Text]] m ()
@@ -69,6 +73,11 @@ getCsvRecordFromFile = forever $ do
                     filter (not . T.null) . T.split (`elem` "\n\r")
 
 -- | Add columns to database. No error if the columns already exist.
+--   Improvement: Should attempt to add column and then catch SQL error if it
+--   already exists, for the same reasons as `removeFileIfExists`. Problem: how
+--   to catch error in a robust and database portable way? Note: SQLite does not
+--   support the `IF NOT EXISTS` command in `ALTER TABLE ___ ADD COLUMN ___ IF
+--   NOT EXISTS`.
 addColumnsIfNotExists :: (MonadReader DbTblConnection m, MonadIO m)
                       => [String] -- ^ List of column names to be added
                       -> m ()
@@ -82,8 +91,8 @@ addColumnsIfNotExists colNameS = do
                 DB.run conn ("ALTER TABLE " ++ tableName ++ " ADD COLUMN \"" ++ newCol ++ "\"") []
     liftIO $ mapM_ addColumnIfNotExists colNameS
 
--- | Add CSV record. Note pattern of UPDATE then INSERT. See
---   https://stackoverflow.com/a/15277374
+-- | A `consumer` that adds CSV records to database. Note pattern of `UPDATE`
+--   then `INSERT OR IGNORE`. See https://stackoverflow.com/a/15277374
 addCsvRecordToDB :: (MonadReader DbTblConnection m, MonadIO m)
                  => Consumer [[T.Text]] m ()
 addCsvRecordToDB = forever $ do
