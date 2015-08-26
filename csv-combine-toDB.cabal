@@ -16,7 +16,7 @@ extra-source-files:  README.md
 cabal-version:       >=1.10
 
 executable project
-  main-is:             csv-combine-toDB.hs
+  main-is:             main.hs
   -- other-modules:
   -- other-extensions:
   build-depends:       base >=4.8 && <4.9
