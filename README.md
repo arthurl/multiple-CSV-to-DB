@@ -1,4 +1,4 @@
-# CSV combine to DB
+# Merge multiple CSVs into one SQL database
 
 Script to crawl a folder for CSV files and upsert each one into a combined database table.
 
