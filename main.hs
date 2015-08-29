@@ -3,6 +3,8 @@
 --{-# OPTIONS_GHC -fno-warn-unused-imports #-}
 {-# LANGUAGE FlexibleContexts            #-}
 
+module Main where
+
 import Control.Monad
 import Control.Monad.Reader
 import Pipes
@@ -19,13 +21,14 @@ import qualified Database.HDBC.Sqlite3 as DB (Connection, connectSqlite3)
 import qualified Database.HDBC as DB (run, describeTable, prepare, execute, commit, disconnect, toSql)
 
 
-data DbTblConnection = DbTblConnection
-    DB.Connection -- ^ Database connection. The type is db specific; change import to modify db.
-    String -- ^ Name of table in database.
+data DbTblConnection = DbTblConnection {
+    getConn :: DB.Connection -- ^ Database connection. The type is db specific; change import to modify db.
+,   getTableName :: String -- ^ Name of table in database.
+}
 
 -- | Removes file if exists. Error catching is used instead of explicitly
 --   testing for the existence of file to eliminate race conditions. See
---   https://stackoverflow.com/a/8502391
+--   <https://stackoverflow.com/a/8502391>.
 removeFileIfExists :: FilePath -> IO ()
 removeFileIfExists fileName = removeFile fileName `catch` (\e ->
     if isDoesNotExistError e
@@ -33,8 +36,8 @@ removeFileIfExists fileName = removeFile fileName `catch` (\e ->
         else throwIO e
     )
 
--- | A `Producer` that outputs filepaths of files ending in ".csv". If given a
---   directory, it will traverse the directory depth-first looking for "*.csv"
+-- | A 'Producer' that outputs filepaths of files ending in \".csv\". If given a
+--   directory, it will traverse the directory depth-first looking for \"*.csv\"
 --   files.
 getRecursiveCSVPath :: (MonadIO m)
                     => FilePath -> Producer FilePath m ()
@@ -52,10 +55,9 @@ getRecursiveCSVPath path = do
             then yield path
             else pure ()
 
--- | `Pipe` that takes in a filepath for a CSV file and outputs parsed CSV data.
+-- | 'Pipe' that takes in a filepath for a CSV file and outputs parsed CSV data.
 --   The list output is generated lazily; i.e. the input file is only read when
 --   elements of the list are used.
---   Improvement: Use a more robust CSV parser.
 getCsvRecordFromFile :: (MonadIO m)
                      => Pipe FilePath [[T.Text]] m ()
 getCsvRecordFromFile = forever $ do
@@ -70,10 +72,11 @@ getCsvRecordFromFile = forever $ do
 
 -- | Add columns to database. No error if the columns already exist.
 --   Improvement: Should attempt to add column and then catch SQL error if it
---   already exists, for the same reasons as `removeFileIfExists`. Problem: how
---   to catch error in a robust and database portable way? Note: SQLite does not
---   support the `IF NOT EXISTS` command in `ALTER TABLE ___ ADD COLUMN ___ IF
---   NOT EXISTS`.
+--   already exists, for the same reasons as 'removeFileIfExists'.
+--
+--   Problem: how to catch \"column already exists\" error in a robust and
+--   database portable way? Note: SQLite does not support the @IF NOT EXISTS@
+--   command in @ALTER TABLE \_\_\_ ADD COLUMN \_\_\_ IF NOT EXISTS@.
 addColumnsIfNotExists :: (MonadReader DbTblConnection m, MonadIO m)
                       => [String] -- ^ List of column names to be added
                       -> m ()
@@ -87,8 +90,9 @@ addColumnsIfNotExists colNameS = do
                 DB.run conn ("ALTER TABLE " ++ tableName ++ " ADD COLUMN \"" ++ newCol ++ "\"") []
     liftIO $ mapM_ addColumnIfNotExists colNameS
 
--- | A `consumer` that adds CSV records to database. Note pattern of `UPDATE`
---   then `INSERT OR IGNORE`. See https://stackoverflow.com/a/15277374
+-- | A 'Consumer' that adds CSV records to database. Note pattern of @UPDATE@
+--   then @INSERT OR IGNORE@. See <https://stackoverflow.com/a/15277374>.
+--
 --   Note: Assumes that the first row = header, and second row = units.
 addCsvRecordToDB :: (MonadReader DbTblConnection m, MonadIO m)
                  => Consumer [[T.Text]] m ()
