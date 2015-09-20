@@ -26,6 +26,7 @@ executable multiple-csv-to-db
                ,       filepath
                ,       directory
                ,       text
+               ,       cassava
   -- hs-source-dirs:
   ghc-options:         -Wall -with-rtsopts=-s
   default-language:    Haskell2010

@@ -12,6 +12,7 @@ import Data.List
 
 import qualified Data.Text.Lazy as T (Text, unpack, splitOn, split, null, singleton)
 import qualified Data.Text.Lazy.IO as T (readFile)
+import qualified Data.Csv.Incremental as CSV
 import Data.Char (toLower)
 import System.FilePath ((</>))
 import System.Directory (removeFile, getDirectoryContents, doesDirectoryExist)

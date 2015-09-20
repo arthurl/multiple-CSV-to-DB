@@ -18,7 +18,7 @@ Modify the variables `dbFileName`, `tableName` and `csvPath` defined at the star
 4. Install dependencies `cabal install --only-dependencies`.
 5. Build & run `cabal build && cabal run`.
 
-You don't need, nor should you, use `sudo` for any of these commands (except installing GHC and Cabal)! 
+You don't need to, nor should you, use `sudo` for any of these commands (except installing GHC and Cabal)!
 
 ## CSV format
 
